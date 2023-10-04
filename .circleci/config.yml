@@ -40,6 +40,25 @@ jobs:
           name: Push to Docker Hub
           command: docker push remambian/capstoneimage:latest
 
+  deploy-infrastructure:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: yum install -y tar gzip
+    - run:
+          name: Ensure EKS network exists
+          command: |
+            aws cloudformation deploy \
+              --template-file cloudformation/network.yml \
+              --tags project=${ENVIRONMENT_NAME}-project \
+              --stack-name "${ENVIRONMENT_NAME}-eks-network" \
+              --region ${AWS_DEFAULT_REGION} \
+              --parameter-overrides file://cloudformation/network-parameters.json
+
+
 workflows:
   default:
     jobs:
@@ -47,3 +66,4 @@ workflows:
       - upload-docker:
           requires:
             - test-build
+      - deploy-infrastructure
