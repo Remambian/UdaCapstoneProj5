@@ -30,7 +30,7 @@ jobs:
       - run:
           name: Build docker container
           command: |
-            sudo docker build -t remambian/capstoneimage:latest .
+            sudo docker build -t remambian/capstoneimage:latest . 
 
       - run:
           name: Log in to Docker Hub
