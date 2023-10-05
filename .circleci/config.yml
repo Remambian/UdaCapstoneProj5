@@ -193,6 +193,6 @@ workflows:
       #     requires:
       #       - test-build
       # - deploy-infrastructure
-      - configure-infrastructure:      
+      - configure-infrastructure    
           # requires:
           #   - deploy-infrastructure
