@@ -88,42 +88,71 @@ jobs:
               --parameter-overrides file://cloudformation/management-parameters.json \
               --output text >> ~/checkIfDeployed.txt
             cat ~/checkIfDeployed.txt
-      # - run:
-      #     name: Extract the IPs of the management instances for Ansible 
-      #     command: |
-      #       echo [management] > ~/inventory.txt
-      #       aws ec2 describe-instances \
-      #         --region "${AWS_DEFAULT_REGION}" \
-      #         --query 'Reservations[*].Instances[*].PublicIpAddress' \
-      #         --filters "Name=tag:Name,Values=${ENVIRONMENT_NAME}-management*" \
-      #         --output text >> ~/inventory.txt
-      #       cat ~/inventory.txt
+      - run:
+          name: Extract the IPs of the management instances for Ansible 
+          command: |
+            echo [management] > ~/inventory.txt
+            aws ec2 describe-instances \
+              --region "${AWS_DEFAULT_REGION}" \
+              --query 'Reservations[*].Instances[*].PublicIpAddress' \
+              --filters "Name=tag:Name,Values=${ENVIRONMENT_NAME}-management*" \
+              --output text >> ~/inventory.txt
+            cat ~/inventory.txt
       - persist_to_workspace:
           root: ~/
           paths:
             - inventory.txt
             - checkIfDeployed.txt
 
-  create-deployment:
+  configure-cluster:
     docker:
-      - image: circleci/python:3.7
+      - image: python:3.7-alpine3.11
     steps:
       - checkout
-      - setup_remote_docker:
-          version: 20.10.7 # Use the appropriate Docker version
+      - add_ssh_keys:
+          fingerprints:
+            - "d4:2f:91:66:b5:0d:84:24:4a:09:2c:d6:8a:c1:0f:91"
+      - attach_workspace:
+          at: ~/
       - run:
-            name: Deploy to EKS Cluster
-            command: |
-              # Install kubectl (if not already installed)
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              sudo mv kubectl /usr/local/bin/
-
-              # Authenticate with the EKS cluster using kubeconfig
-              aws eks update-kubeconfig --name "${ENVIRONMENT_NAME}-cluster-role" --region ${AWS_DEFAULT_REGION}
-
-              # Apply the Kubernetes deployment manifest
-              kubectl apply -f deployment.json
+          name: Install dependencies
+          command: |
+            apk add --update ansible
+      - run:
+          name: Configure server
+          command: |
+            if grep -q "No changes to deploy" ~/checkIfDeployed.txt
+              then
+                cat ~/inventory.txt
+                echo "Our management instances are already configured."
+              else
+                cat ~/inventory.txt
+                cd ansible
+                ansible-playbook -i ~/inventory.txt configure-cluster.yml
+              fi
+      - run:
+          name: Wait for LoadBalancer's domain to become reachable
+          command: |
+            if grep -q "No changes to deploy" ~/checkIfDeployed.txt
+              then
+                cat ~/inventory.txt
+                echo "Our management instances are already configured."
+              else
+                cat ~/inventory.txt
+                echo "Wait 60 seconds..."
+                sleep 60
+              fi
+      - run:
+          name: Display the LoadBalancer's DNS name
+          command: |
+            cat ~/inventory.txt
+            cd ansible
+            ansible-playbook -i ~/inventory.txt save-elb-dns.yml
+            cat ~/elb_dns.txt
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - elb_dns.txt
 
 
 
@@ -136,4 +165,6 @@ workflows:
       #     requires:
       #       - test-build
       # - deploy-infrastructure
-      - create-deployment
+      - configure-infrastructure:      
+          # requires:
+          #   - deploy-infrastructure
